@@ -38,15 +38,18 @@ pub struct Renderer<'grr> {
 }
 
 impl<'grr> Renderer<'grr> {
-    pub fn new(imgui: &mut imgui::ImGui, grr: &'grr grr::Device) -> Result<Self, grr::Error> {
+    pub unsafe fn new(
+        imgui: &mut imgui::Context,
+        grr: &'grr grr::Device,
+    ) -> Result<Self, grr::Error> {
         {
             // Fix incorrect colors with sRGB framebuffer
-            fn imgui_gamma_to_linear(col: imgui::ImVec4) -> imgui::ImVec4 {
-                let x = col.x.powf(2.2);
-                let y = col.y.powf(2.2);
-                let z = col.z.powf(2.2);
-                let w = 1.0 - (1.0 - col.w).powf(2.2);
-                imgui::ImVec4::new(x, y, z, w)
+            fn imgui_gamma_to_linear(col: [f32; 4]) -> [f32; 4] {
+                let x = col[0].powf(2.2);
+                let y = col[1].powf(2.2);
+                let z = col[2].powf(2.2);
+                let w = 1.0 - (1.0 - col[3]).powf(2.2);
+                [x, y, z, w]
             }
 
             let style = imgui.style_mut();
@@ -58,21 +61,23 @@ impl<'grr> Renderer<'grr> {
         let vs = grr.create_shader(grr::ShaderStage::Vertex, VERTEX_SRC.as_bytes())?;
         let fs = grr.create_shader(grr::ShaderStage::Fragment, FRAGMENT_SRC.as_bytes())?;
 
-        let pipeline = grr.create_graphics_pipeline(grr::GraphicsPipelineDesc {
-            vertex_shader: &vs,
+        let pipeline = grr.create_graphics_pipeline(grr::VertexPipelineDesc {
+            vertex_shader: vs,
             tessellation_control_shader: None,
             tessellation_evaluation_shader: None,
             geometry_shader: None,
-            fragment_shader: Some(&fs),
+            fragment_shader: Some(fs),
         })?;
 
         let mut textures = imgui::Textures::new();
-        let image = imgui.prepare_texture(|handle| {
+        let mut fonts = imgui.fonts();
+        let image = {
+            let texture = fonts.build_rgba32_texture();
             let image = grr
                 .create_image(
                     grr::ImageType::D2 {
-                        width: handle.width,
-                        height: handle.height,
+                        width: texture.width,
+                        height: texture.height,
                         layers: 1,
                         samples: 1,
                     },
@@ -80,33 +85,33 @@ impl<'grr> Renderer<'grr> {
                     1,
                 )
                 .unwrap();
-            grr.object_name(&image, "imgui-texture");
+            grr.object_name(image, "imgui-texture");
             grr.copy_host_to_image(
-                &image,
+                image,
                 grr::SubresourceLevel {
                     level: 0,
                     layers: 0..1,
                 },
                 grr::Offset { x: 0, y: 0, z: 0 },
                 grr::Extent {
-                    width: handle.width,
-                    height: handle.height,
+                    width: texture.width,
+                    height: texture.height,
                     depth: 1,
                 },
-                &handle.pixels,
+                &texture.data,
                 grr::SubresourceLayout {
                     base_format: grr::BaseFormat::RGBA,
                     format_layout: grr::FormatLayout::U8,
-                    row_pitch: handle.width,
-                    image_height: handle.height,
+                    row_pitch: texture.width,
+                    image_height: texture.height,
                     alignment: 4,
                 },
             );
 
             image
-        });
+        };
         let image_view = grr.create_image_view(
-            &image,
+            image,
             grr::ImageViewType::D2,
             grr::Format::R8G8B8A8_SRGB,
             grr::SubresourceRange {
@@ -129,7 +134,7 @@ impl<'grr> Renderer<'grr> {
             border_color: [0.0, 0.0, 0.0, 1.0],
         })?;
 
-        imgui.set_font_texture_id(textures.insert((image, image_view, sampler)));
+        fonts.tex_id = imgui::TextureId::from(textures.insert((image, image_view, sampler)));
 
         let vertex_array = grr.create_vertex_array(&[
             grr::VertexAttributeDesc {
@@ -160,62 +165,65 @@ impl<'grr> Renderer<'grr> {
         })
     }
 
-    pub fn render(&self, ui: imgui::Ui) -> Result<(), grr::Error> {
-        let imgui::FrameSize {
-            logical_size: (width, height),
-            hidpi_factor,
-        } = ui.frame_size();
-        if width <= 0.0 || height <= 0.0 {
+    pub unsafe fn render(&self, draw_data: &imgui::DrawData) -> Result<(), grr::Error> {
+        let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
+        let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
+
+        if fb_width <= 0.0 || fb_height <= 0.0 {
             return Ok(());
         }
 
-        let fb_size = (
-            (width * hidpi_factor) as f32,
-            (height * hidpi_factor) as f32,
-        );
-
         let transform = [
-            [2.0 / width as f32, 0.0, 0.0, 0.0],
-            [0.0, -2.0 / height as f32, 0.0, 0.0],
+            [2.0 / fb_width as f32, 0.0, 0.0, 0.0],
+            [0.0, -2.0 / fb_height as f32, 0.0, 0.0],
             [0.0, 0.0, -1.0, 0.0],
             [-1.0, 1.0, 0.0, 1.0],
         ];
 
-        ui.render(|ui, mut draw_data| {
-            draw_data.scale_clip_rects(ui.imgui().display_framebuffer_scale());
-            for draw_list in &draw_data {
-                self.render_draw_list(&draw_list, fb_size, &transform)?;
-            }
-            Ok(())
-        })
+        let clip_off = draw_data.display_pos;
+        let clip_scale = draw_data.framebuffer_scale;
+
+        for draw_list in draw_data.draw_lists() {
+            self.render_draw_list(
+                &draw_list,
+                (fb_width, fb_height),
+                &transform,
+                clip_off,
+                clip_scale,
+            )?;
+        }
+
+        Ok(())
     }
 
-    fn render_draw_list<'a>(
+    unsafe fn render_draw_list<'a>(
         &self,
-        draw_list: &imgui::DrawList<'a>,
+        draw_list: &imgui::DrawList,
         fb_size: (f32, f32),
         matrix: &[[f32; 4]; 4],
+        clip_off: [f32; 2],
+        clip_scale: [f32; 2],
     ) -> Result<(), grr::Error> {
         let vertex_buffer = self.device.create_buffer_from_host(
-            grr::as_u8_slice(&draw_list.vtx_buffer),
+            grr::as_u8_slice(&draw_list.vtx_buffer()),
             grr::MemoryFlags::empty(),
         )?;
         let index_buffer = self.device.create_buffer_from_host(
-            grr::as_u8_slice(&draw_list.idx_buffer),
+            grr::as_u8_slice(&draw_list.idx_buffer()),
             grr::MemoryFlags::empty(),
         )?;
 
-        self.device.bind_pipeline(&self.pipeline);
-        self.device.bind_vertex_array(&self.vertex_array);
+        self.device.bind_pipeline(self.pipeline);
+        self.device.bind_vertex_array(self.vertex_array);
         self.device
-            .bind_index_buffer(&self.vertex_array, &index_buffer);
+            .bind_index_buffer(self.vertex_array, index_buffer);
         self.device.bind_vertex_buffers(
-            &self.vertex_array,
+            self.vertex_array,
             0,
             &[grr::VertexBufferView {
-                buffer: &vertex_buffer,
+                buffer: vertex_buffer,
                 offset: 0,
-                stride: std::mem::size_of::<imgui::ImDrawVert>() as _,
+                stride: std::mem::size_of::<imgui::DrawVert>() as _,
                 input_rate: grr::InputRate::Vertex,
             }],
         );
@@ -238,7 +246,7 @@ impl<'grr> Renderer<'grr> {
         self.device.bind_color_blend_state(&color_blend);
 
         self.device
-            .bind_uniform_constants(&self.pipeline, 0, &[grr::Constant::Mat4x4(*matrix)]);
+            .bind_uniform_constants(self.pipeline, 0, &[grr::Constant::Mat4x4(*matrix)]);
 
         self.device.set_viewport(
             0,
@@ -253,31 +261,50 @@ impl<'grr> Renderer<'grr> {
         );
 
         let mut index_start = 0;
-        for cmd in draw_list.cmd_buffer {
-            let texture_id = cmd.texture_id.into();
-            let (_, image_view, sampler) = self.textures.get(texture_id).unwrap(); // TODO
+        for cmd in draw_list.commands() {
+            match cmd {
+                imgui::DrawCmd::Elements {
+                    count,
+                    cmd_params:
+                        imgui::DrawCmdParams {
+                            clip_rect,
+                            texture_id,
+                            ..
+                        },
+                } => {
+                    let clip_rect = [
+                        (clip_rect[0] - clip_off[0]) * clip_scale[0],
+                        (clip_rect[1] - clip_off[1]) * clip_scale[1],
+                        (clip_rect[2] - clip_off[0]) * clip_scale[0],
+                        (clip_rect[3] - clip_off[1]) * clip_scale[1],
+                    ];
 
-            self.device.bind_image_views(0, &[&image_view]);
-            self.device.bind_samplers(0, &[&sampler]);
+                    let (_, image_view, sampler) = self.textures.get(texture_id).unwrap(); // TODO
+                    self.device.bind_image_views(0, &[*image_view]);
+                    self.device.bind_samplers(0, &[*sampler]);
 
-            self.device.set_scissor(
-                0,
-                &[grr::Region {
-                    x: cmd.clip_rect.x as _,
-                    y: (fb_size.1 - cmd.clip_rect.w) as _,
-                    w: (cmd.clip_rect.z - cmd.clip_rect.x) as _,
-                    h: (cmd.clip_rect.w - cmd.clip_rect.y) as _,
-                }],
-            );
-            self.device.draw_indexed(
-                grr::Primitive::Triangles,
-                grr::IndexTy::U16,
-                index_start..index_start + cmd.elem_count,
-                0..1,
-                0,
-            );
+                    self.device.set_scissor(
+                        0,
+                        &[grr::Region {
+                            x: clip_rect[0] as _,
+                            y: (fb_size.1 - clip_rect[3]) as _,
+                            w: clip_rect[2] as _,
+                            h: clip_rect[3] as _,
+                        }],
+                    );
+                    self.device.draw_indexed(
+                        grr::Primitive::Triangles,
+                        grr::IndexTy::U16,
+                        index_start..index_start + count as u32,
+                        0..1,
+                        0,
+                    );
 
-            index_start += cmd.elem_count;
+                    index_start += count as u32;
+                }
+
+                _ => unimplemented!(),
+            }
         }
 
         self.device.delete_buffer(vertex_buffer);
