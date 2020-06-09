@@ -64,7 +64,7 @@ fn main() -> grr::Result<()> {
     platform.attach_window(
         imgui.io_mut(),
         window.window(),
-        imgui_winit_support::HiDpiMode::Rounded,
+        imgui_winit_support::HiDpiMode::Default,
     );
 
     let mut running = true;
