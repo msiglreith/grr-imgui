@@ -38,6 +38,12 @@ pub struct Renderer<'grr> {
 }
 
 impl<'grr> Renderer<'grr> {
+    /// Create a new Rendered for an Imgui context.
+    ///
+    /// # Safety
+    ///
+    /// This function directly calls multiple unsafe `grr::Device`
+    /// calls.
     pub unsafe fn new(
         imgui: &mut imgui::Context,
         grr: &'grr grr::Device,
@@ -134,7 +140,7 @@ impl<'grr> Renderer<'grr> {
             border_color: [0.0, 0.0, 0.0, 1.0],
         })?;
 
-        fonts.tex_id = imgui::TextureId::from(textures.insert((image, image_view, sampler)));
+        fonts.tex_id = textures.insert((image, image_view, sampler));
 
         let vertex_array = grr.create_vertex_array(&[
             grr::VertexAttributeDesc {
@@ -165,6 +171,12 @@ impl<'grr> Renderer<'grr> {
         })
     }
 
+    /// Render the current Imgui frame.
+    ///
+    /// # Safety
+    ///
+    /// This function makes multiple unsafe calls to the underlying
+    /// `grr::Device`.
     pub unsafe fn render(&self, draw_data: &imgui::DrawData) -> Result<(), grr::Error> {
         let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
         let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
@@ -173,11 +185,21 @@ impl<'grr> Renderer<'grr> {
             return Ok(());
         }
 
+        let left = draw_data.display_pos[0];
+        let right = draw_data.display_pos[0] + draw_data.display_size[0];
+        let top = draw_data.display_pos[1];
+        let bottom = draw_data.display_pos[1] + draw_data.display_size[1];
+
         let transform = [
             [2.0 / fb_width as f32, 0.0, 0.0, 0.0],
             [0.0, -2.0 / fb_height as f32, 0.0, 0.0],
             [0.0, 0.0, -1.0, 0.0],
-            [-1.0, 1.0, 0.0, 1.0],
+            [
+                (right + left) / (left - right),
+                (top + bottom) / (bottom - top),
+                0.0,
+                1.0,
+            ],
         ];
 
         let clip_off = draw_data.display_pos;
@@ -196,7 +218,7 @@ impl<'grr> Renderer<'grr> {
         Ok(())
     }
 
-    unsafe fn render_draw_list<'a>(
+    unsafe fn render_draw_list(
         &self,
         draw_list: &imgui::DrawList,
         fb_size: (f32, f32),
@@ -279,27 +301,33 @@ impl<'grr> Renderer<'grr> {
                         (clip_rect[3] - clip_off[1]) * clip_scale[1],
                     ];
 
-                    let (_, image_view, sampler) = self.textures.get(texture_id).unwrap(); // TODO
-                    self.device.bind_image_views(0, &[*image_view]);
-                    self.device.bind_samplers(0, &[*sampler]);
+                    if clip_rect[0] < fb_size.0
+                        && clip_rect[1] < fb_size.1
+                        && clip_rect[2] >= 0.0
+                        && clip_rect[3] >= 0.0
+                    {
+                        let (_, image_view, sampler) = self.textures.get(texture_id).unwrap(); // TODO
+                        self.device.bind_image_views(0, &[*image_view]);
+                        self.device.bind_samplers(0, &[*sampler]);
 
-                    self.device.set_scissor(
-                        0,
-                        &[grr::Region {
-                            x: clip_rect[0] as _,
-                            y: (fb_size.1 - clip_rect[3]) as _,
-                            w: clip_rect[2] as _,
-                            h: clip_rect[3] as _,
-                        }],
-                    );
-                    self.device.draw_indexed(
-                        grr::Primitive::Triangles,
-                        grr::IndexTy::U16,
-                        index_start..index_start + count as u32,
-                        0..1,
-                        0,
-                    );
+                        self.device.set_scissor(
+                            0,
+                            &[grr::Region {
+                                x: clip_rect[0] as _,
+                                y: (fb_size.1 - clip_rect[3]) as _,
+                                w: (clip_rect[2] - clip_rect[0]).abs().ceil() as _,
+                                h: (clip_rect[3] - clip_rect[1]).abs().ceil() as _,
+                            }],
+                        );
 
+                        self.device.draw_indexed(
+                            grr::Primitive::Triangles,
+                            grr::IndexTy::U16,
+                            index_start..index_start + count as u32,
+                            0..1,
+                            0,
+                        );
+                    }
                     index_start += count as u32;
                 }
 
