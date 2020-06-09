@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 imgui = "0.4"
-grr = { path = "/home/mason/workspace/grr" }
+grr = "0.7"
 
 [dev-dependencies]
 glutin = "0.24"

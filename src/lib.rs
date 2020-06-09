@@ -58,27 +58,16 @@ impl<'grr> Renderer<'grr> {
             }
         }
 
-        let vs = grr.create_shader(
-            grr::ShaderStage::Vertex,
-            VERTEX_SRC.as_bytes(),
-            grr::ShaderFlags::VERBOSE,
-        )?;
-        let fs = grr.create_shader(
-            grr::ShaderStage::Fragment,
-            FRAGMENT_SRC.as_bytes(),
-            grr::ShaderFlags::VERBOSE,
-        )?;
+        let vs = grr.create_shader(grr::ShaderStage::Vertex, VERTEX_SRC.as_bytes())?;
+        let fs = grr.create_shader(grr::ShaderStage::Fragment, FRAGMENT_SRC.as_bytes())?;
 
-        let pipeline = grr.create_graphics_pipeline(
-            grr::VertexPipelineDesc {
-                vertex_shader: vs,
-                tessellation_control_shader: None,
-                tessellation_evaluation_shader: None,
-                geometry_shader: None,
-                fragment_shader: Some(fs),
-            },
-            grr::PipelineFlags::VERBOSE,
-        )?;
+        let pipeline = grr.create_graphics_pipeline(grr::VertexPipelineDesc {
+            vertex_shader: vs,
+            tessellation_control_shader: None,
+            tessellation_evaluation_shader: None,
+            geometry_shader: None,
+            fragment_shader: Some(fs),
+        })?;
 
         let mut textures = imgui::Textures::new();
         let mut fonts = imgui.fonts();
