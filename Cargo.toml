@@ -5,9 +5,9 @@ authors = ["msiglreith <m.siglreith@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-imgui = "0.2"
+imgui = "0.4"
 grr = "0.7"
 
 [dev-dependencies]
-glutin = "0.19"
-imgui-winit-support = "0.2"
+glutin = "0.24"
+imgui-winit-support = "0.4"
