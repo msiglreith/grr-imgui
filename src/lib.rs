@@ -191,12 +191,12 @@ impl<'grr> Renderer<'grr> {
         let bottom = draw_data.display_pos[1] + draw_data.display_size[1];
 
         let transform = [
-            [2.0 / fb_width as f32, 0.0, 0.0, 0.0],
-            [0.0, -2.0 / fb_height as f32, 0.0, 0.0],
+            [2.0 / draw_data.display_size[0] as f32, 0.0, 0.0, 0.0],
+            [0.0, -2.0 / draw_data.display_size[1] as f32, 0.0, 0.0],
             [0.0, 0.0, -1.0, 0.0],
             [
-                (right + left) / (left - right),
-                (top + bottom) / (bottom - top),
+                -(right + left) / draw_data.display_size[0],
+                (top + bottom) / draw_data.display_size[1],
                 0.0,
                 1.0,
             ],
