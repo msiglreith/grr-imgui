@@ -64,16 +64,27 @@ impl<'grr> Renderer<'grr> {
             }
         }
 
-        let vs = grr.create_shader(grr::ShaderStage::Vertex, VERTEX_SRC.as_bytes())?;
-        let fs = grr.create_shader(grr::ShaderStage::Fragment, FRAGMENT_SRC.as_bytes())?;
+        let vs = grr.create_shader(
+            grr::ShaderStage::Vertex,
+            VERTEX_SRC.as_bytes(),
+            grr::ShaderFlags::empty(),
+        )?;
+        let fs = grr.create_shader(
+            grr::ShaderStage::Fragment,
+            FRAGMENT_SRC.as_bytes(),
+            grr::ShaderFlags::empty(),
+        )?;
 
-        let pipeline = grr.create_graphics_pipeline(grr::VertexPipelineDesc {
-            vertex_shader: vs,
-            tessellation_control_shader: None,
-            tessellation_evaluation_shader: None,
-            geometry_shader: None,
-            fragment_shader: Some(fs),
-        })?;
+        let pipeline = grr.create_graphics_pipeline(
+            grr::VertexPipelineDesc {
+                vertex_shader: vs,
+                tessellation_control_shader: None,
+                tessellation_evaluation_shader: None,
+                geometry_shader: None,
+                fragment_shader: Some(fs),
+            },
+            grr::PipelineFlags::empty(),
+        )?;
 
         let mut textures = imgui::Textures::new();
         let mut fonts = imgui.fonts();
@@ -93,24 +104,26 @@ impl<'grr> Renderer<'grr> {
                 .unwrap();
             grr.object_name(image, "imgui-texture");
             grr.copy_host_to_image(
-                image,
-                grr::SubresourceLevel {
-                    level: 0,
-                    layers: 0..1,
-                },
-                grr::Offset { x: 0, y: 0, z: 0 },
-                grr::Extent {
-                    width: texture.width,
-                    height: texture.height,
-                    depth: 1,
-                },
                 &texture.data,
-                grr::SubresourceLayout {
-                    base_format: grr::BaseFormat::RGBA,
-                    format_layout: grr::FormatLayout::U8,
-                    row_pitch: texture.width,
-                    image_height: texture.height,
-                    alignment: 4,
+                image,
+                grr::HostImageCopy {
+                    host_layout: grr::MemoryLayout {
+                        base_format: grr::BaseFormat::RGBA,
+                        format_layout: grr::FormatLayout::U8,
+                        row_length: texture.width,
+                        image_height: texture.height,
+                        alignment: 4,
+                    },
+                    image_subresource: grr::SubresourceLayers {
+                        level: 0,
+                        layers: 0..1,
+                    },
+                    image_offset: grr::Offset { x: 0, y: 0, z: 0 },
+                    image_extent: grr::Extent {
+                        width: texture.width,
+                        height: texture.height,
+                        depth: 1,
+                    },
                 },
             );
 
