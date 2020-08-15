@@ -3,6 +3,13 @@ name = "grr-imgui"
 version = "0.2.0"
 authors = ["msiglreith <m.siglreith@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "grr backend for imgui"
+documentation = "https://docs.rs/grr-imgui"
+repository = "https://github.com/msiglreith/grr-imgui"
+readme = "README.md"
+keywords = ["window", "grr", "graphics"]
+categories = ["game-engines", "graphics"]
 
 [dependencies]
 imgui = "0.4"
