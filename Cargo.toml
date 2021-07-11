@@ -12,9 +12,9 @@ keywords = ["window", "grr", "graphics"]
 categories = ["game-engines", "graphics"]
 
 [dependencies]
-imgui = "0.4"
+imgui = "0.7"
 grr = "0.8"
 
 [dev-dependencies]
-glutin = "0.24"
-imgui-winit-support = "0.4"
+glutin = "0.26"
+imgui-winit-support = "0.7"

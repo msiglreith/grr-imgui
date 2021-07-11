@@ -1,5 +1,5 @@
 use glutin::dpi::{LogicalSize, PhysicalSize};
-use glutin::platform::desktop::EventLoopExtDesktop;
+use glutin::platform::run_return::EventLoopExtRunReturn;
 
 use std::time::Instant;
 
@@ -100,7 +100,10 @@ fn main() -> grr::Result<()> {
             platform
                 .prepare_frame(io, window.window())
                 .expect("Failed to start frame");
-            last_frame = io.update_delta_time(last_frame);
+	    let now = Instant::now();
+	    let since_last = Instant::now() - last_frame;
+            io.update_delta_time(since_last);
+	    last_frame = now;
             let ui = imgui.frame();
             ui.show_demo_window(&mut running);
 
